@@ -1,10 +1,9 @@
 <script setup>
-console.log('hello');
-import { supabase } from '../utils/supabase';
+// import { supabase } from '@/utils/supabase.js';
 
-const { data, error } = await supabase.from('competitors').select('*');
+// let { data: competitors, error } = await supabase.from('competitors').select('*');
 
-console.log(data, error);
+// console.log(competitors, error);
 </script>
 
 <template>

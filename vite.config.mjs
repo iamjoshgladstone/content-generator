@@ -7,7 +7,7 @@ import { defineConfig } from 'vite';
 // https://vitejs.dev/config/
 export default defineConfig({
     optimizeDeps: {
-        noDiscovery: true
+        include: ['@supabase/supabase-js'] // Ensure Supabase is pre-optimized
     },
     plugins: [
         vue(),
@@ -17,8 +17,7 @@ export default defineConfig({
     ],
     resolve: {
         alias: {
-            '@': fileURLToPath(new URL('./src', import.meta.url)),
-            '@supabase/postgrest-js': '@supabase/postgrest-js/dist/module/index.js'
+            '@': fileURLToPath(new URL('./src', import.meta.url))
         }
     }
 });
