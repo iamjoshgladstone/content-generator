@@ -17,6 +17,11 @@ const router = createRouter({
                     path: '/configure',
                     name: 'configure',
                     component: () => import('@/views/ConfigureCompetitors.vue')
+                },
+                {
+                    path: '/settings',
+                    name: 'settings',
+                    component: () => import('@/views/pages/Settings.vue')
                 }
             ]
         },
