@@ -14,6 +14,7 @@ export const useUserStore = defineStore('user', {
             last_name: null,
             sales_segment: null
         },
+        competitors: [],
         loading: false,
         error: null
     }),
@@ -79,6 +80,8 @@ export const useUserStore = defineStore('user', {
                     if (!existingUser.user_uuid) {
                         await this.updateUserUUID(existingUser.user_id, user.id);
                     }
+
+                    await this.fetchUserCompetitors();
                 } else {
                     // Create new user record if not found
                     const { data: newUser, error: insertError } = await supabase
@@ -161,6 +164,49 @@ export const useUserStore = defineStore('user', {
             } catch (error) {
                 console.error('Error signing out:', error);
                 throw error;
+            }
+        },
+
+        async fetchUserCompetitors() {
+            try {
+                // Step 1: Get all competitor_uuids for this user
+                const { data: userCompetitors, error: userCompetitorsError } = await supabase.from('user_competitors').select('competitor_uuid').eq('user_uuid', this.userDetails.user_uuid);
+
+                if (userCompetitorsError) throw userCompetitorsError;
+
+                if (!userCompetitors.length) return [];
+
+                // Step 2: Get company details for each competitor_uuid
+                const { data: companies, error: companiesError } = await supabase
+                    .from('companies')
+                    .select('company_name, company_logo, company_domain')
+                    .in(
+                        'company_uuid',
+                        userCompetitors.map((uc) => uc.competitor_uuid)
+                    );
+
+                if (companiesError) throw companiesError;
+
+                // Map the companies data to the expected format
+                return companies.map((company) => ({
+                    name: company.company_name,
+                    logo_url: company.company_logo,
+                    website: company.company_domain
+                }));
+            } catch (error) {
+                console.error('Error fetching user competitors:', error);
+                return [];
+            }
+        },
+
+        async updateCompetitors(competitors) {
+            try {
+                // Update the store's competitors array
+                this.competitors = competitors;
+                return true;
+            } catch (error) {
+                console.error('Error updating competitors in store:', error);
+                return false;
             }
         }
     }

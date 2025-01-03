@@ -1,8 +1,11 @@
 <script setup>
+import { useUserStore } from '@/stores/userStore';
 import Dropdown from 'primevue/dropdown';
 import InputText from 'primevue/inputtext';
-import { ref } from 'vue';
+import { onMounted, ref } from 'vue';
 import AppMenuItem from './AppMenuItem.vue';
+
+const userStore = useUserStore();
 
 // Menu model
 const model = ref([
@@ -22,11 +25,20 @@ const model = ref([
 // Dropdown and input data
 const selectedCompetitor = ref(null);
 const prospectUrl = ref('');
-const competitors = ref([
-    { label: 'Competitor 1', value: 'comp1' },
-    { label: 'Competitor 2', value: 'comp2' }
-    // Add more competitors here if needed
-]);
+const competitors = ref([]);
+
+// Initialize competitors on mount
+onMounted(async () => {
+    try {
+        const userCompetitors = await userStore.fetchUserCompetitors();
+        competitors.value = userCompetitors.map((competitor) => ({
+            label: competitor.name,
+            value: competitor.website
+        }));
+    } catch (error) {
+        console.error('Error loading competitors:', error);
+    }
+});
 </script>
 
 <template>
