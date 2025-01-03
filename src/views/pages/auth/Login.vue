@@ -1,37 +1,91 @@
 <script setup>
 import supabase from '@/utils/supabase';
-import { useToast } from 'primevue/usetoast'; // Import Toast hook
+import { useToast } from 'primevue/usetoast';
 import { ref } from 'vue';
 
-const toast = useToast(); // Initialize Toast
+const toast = useToast();
 const email = ref('');
 const isSubmitting = ref(false);
 const isSuccess = ref(false);
 
+const handleUserStorage = async (userEmail) => {
+    try {
+        // Check if the user already exists
+        const { data: existingUser, error } = await supabase.from('user_storage').select('user_email').eq('user_email', userEmail).single();
+
+        if (error && error.code !== 'PGRST116') {
+            throw error; // Handle unexpected errors
+        }
+
+        if (!existingUser) {
+            // Generate random 8 digit number for user_id
+            const userId = Math.floor(10000000 + Math.random() * 90000000);
+            // Insert the new user
+            const { error: insertError } = await supabase.from('user_storage').insert([
+                {
+                    user_email: userEmail,
+                    user_id: userId
+                }
+            ]);
+
+            if (insertError) throw insertError;
+        }
+    } catch (error) {
+        console.error('Error handling user storage:', error);
+    }
+};
+
 const sendMagicLink = async () => {
     if (!email.value) {
-        toast.add({ severity: 'warn', summary: 'Warning', detail: 'Please enter a valid email address.', life: 3000 });
+        toast.add({
+            severity: 'warn',
+            summary: 'Warning',
+            detail: 'Please enter a valid email address.',
+            life: 3000
+        });
         return;
     }
+
     isSubmitting.value = true;
+
     try {
-        let { data, error } = await supabase.auth.signInWithOtp({
-            email: email.value
+        const { error } = await supabase.auth.signInWithOtp({
+            email: email.value,
+            options: {
+                emailRedirectTo: window.location.origin
+            }
         });
 
         if (error) {
-            console.error(error.message);
-            toast.add({ severity: 'error', summary: 'Error', detail: `Error sending magic link: ${error.message}`, life: 5000 });
+            console.error('Supabase OTP Error:', error);
+            toast.add({
+                severity: 'error',
+                summary: 'Authentication Error',
+                detail: error.message || 'Failed to send magic link. Please try again.',
+                life: 5000
+            });
         } else {
-            toast.add({ severity: 'success', summary: 'Success', detail: 'Magic link sent! Please check your email.', life: 5000 });
+            // Store the email in the user_storage table
+            await handleUserStorage(email.value);
+
+            toast.add({
+                severity: 'success',
+                summary: 'Success',
+                detail: 'Magic link sent! Please check your email.',
+                life: 5000
+            });
             isSuccess.value = true;
         }
     } catch (err) {
-        console.error(err);
-        toast.add({ severity: 'error', summary: 'Unexpected Error', detail: 'An unexpected error occurred.', life: 5000 });
+        console.error('Unexpected error during OTP:', err);
+        toast.add({
+            severity: 'error',
+            summary: 'System Error',
+            detail: 'An unexpected error occurred. Please try again later.',
+            life: 5000
+        });
     } finally {
         isSubmitting.value = false;
-        isSuccess.value = true;
     }
 };
 </script>

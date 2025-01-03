@@ -1,3 +1,4 @@
+import { createPinia } from 'pinia';
 import { createApp } from 'vue';
 import App from './App.vue';
 import router from './router';
@@ -13,6 +14,7 @@ import '@/assets/styles.scss';
 import '@/assets/tailwind.css';
 
 const app = createApp(App);
+const pinia = createPinia();
 
 const MyPreset = definePreset(Aura, {
     semantic: {
@@ -45,3 +47,4 @@ app.use(ToastService);
 app.use(ConfirmationService);
 app.component('Toast', Toast);
 app.mount('#app');
+app.use(pinia);

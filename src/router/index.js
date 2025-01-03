@@ -1,5 +1,6 @@
 import AppLayout from '@/layout/AppLayout.vue';
 import { createRouter, createWebHistory } from 'vue-router';
+import { setupAuthGuards } from './guards';
 
 const router = createRouter({
     history: createWebHistory(),
@@ -53,5 +54,8 @@ const router = createRouter({
         }
     ]
 });
+
+// Setup authentication guards
+setupAuthGuards(router);
 
 export default router;

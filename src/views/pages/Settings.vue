@@ -1,5 +1,12 @@
 <script setup>
-import { ref } from 'vue';
+import { useUserStore } from '@/stores/userStore';
+import { useToast } from 'primevue/usetoast';
+import { onMounted, ref } from 'vue';
+import { useRouter } from 'vue-router';
+
+const userStore = useUserStore();
+const router = useRouter();
+const toast = useToast();
 
 const userSettings = ref({
     firstName: '',
@@ -14,16 +21,66 @@ const segments = ref([
     { label: 'Enterprise', value: 'enterprise' }
 ]);
 
-const saveSettings = () => {
-    // TODO: Implement save functionality
-    // This would typically involve calling your backend API
-    console.log('Saving settings:', userSettings.value);
+// Initialize form with current user data
+onMounted(() => {
+    const currentUser = userStore.getUserDetails;
+    userSettings.value = {
+        firstName: currentUser.first_name || '',
+        lastName: currentUser.last_name || '',
+        companyName: currentUser.company_name || '',
+        segment: currentUser.sales_segment || null
+    };
+});
+
+const handleSignOut = async () => {
+    try {
+        await userStore.signOut();
+        router.push('/auth/login');
+    } catch (error) {
+        toast.add({
+            severity: 'error',
+            summary: 'Error',
+            detail: 'Failed to sign out. Please try again.',
+            life: 3000
+        });
+    }
+};
+
+const saveSettings = async () => {
+    try {
+        // Map form fields to database fields
+        const updatedDetails = {
+            first_name: userSettings.value.firstName,
+            last_name: userSettings.value.lastName,
+            company_name: userSettings.value.companyName,
+            sales_segment: userSettings.value.segment
+        };
+
+        await userStore.updateUserDetails(updatedDetails);
+
+        toast.add({
+            severity: 'success',
+            summary: 'Success',
+            detail: 'Settings saved successfully',
+            life: 3000
+        });
+    } catch (error) {
+        toast.add({
+            severity: 'error',
+            summary: 'Error',
+            detail: 'Failed to save settings. Please try again.',
+            life: 3000
+        });
+    }
 };
 </script>
 
 <template>
     <div class="card">
-        <h1 class="text-3xl font-bold mb-6">Profile Settings</h1>
+        <div class="flex justify-between items-center mb-6">
+            <h1 class="text-3xl font-bold">Profile Settings</h1>
+            <Button label="Sign Out" severity="danger" @click="handleSignOut" icon="pi pi-sign-out" />
+        </div>
 
         <div class="grid grid-cols-12 gap-6">
             <div class="col-span-12 md:col-span-6">
