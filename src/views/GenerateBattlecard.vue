@@ -6,9 +6,10 @@ import { supabase } from '@/utils/supabase';
 import Button from 'primevue/button';
 import { useToast } from 'primevue/usetoast';
 import { onMounted, ref } from 'vue';
-import { useRoute } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 
 const route = useRoute();
+const router = useRouter();
 const userStore = useUserStore();
 const { generateContentSpecificModel } = useChatCompletion();
 const competitorUuid = route.params.competitor_uuid;
@@ -28,22 +29,32 @@ const getProspectName = async (prospectUrl) => {
             messages: [{ role: 'user', content: prompt }],
             temperature: 0.3
         });
+
+        if (!response) {
+            console.error('Empty response from LLM');
+            return 'Unknown Company';
+        }
+
         return response.trim();
     } catch (error) {
         console.error('Error getting prospect name:', error);
-        return 'the prospect';
+        return 'Unknown Company';
     }
 };
 
 const generateBattlecardContent = async (facts, competitorName, prospectUrl) => {
+    console.log('Starting battlecard generation for:', competitorName);
     stage.value = 'customizing';
     progress.value = 50;
 
     // Get prospect name first
+    console.log('Getting prospect name for:', prospectUrl);
     const prospectName = await getProspectName(prospectUrl);
+    console.log('Retrieved prospect name:', prospectName);
     progress.value = 60;
 
     // Generate Overview
+    console.log('Generating overview section');
     const overviewPrompt = `Create a competitive overview battlecard for ${competitorName}. Use the following facts: ${JSON.stringify(facts)}.
     Return a JSON object with:
     {
@@ -68,6 +79,7 @@ const generateBattlecardContent = async (facts, competitorName, prospectUrl) => 
         ],
         temperature: 0.1
     });
+    console.log('Raw overview response:', overview);
 
     progress.value = 70;
 
@@ -134,6 +146,7 @@ const saveBattlecard = async (battlecardData) => {
         .insert({
             battlecard_name: `vs. ${battlecardData.overview.competitor}`,
             prospect_uuid: userStore.prospectUuid,
+            prospect_url: userStore.prospectUrl,
             user_uuid: userStore.userDetails.user_uuid,
             battlecard_json: battlecardData
         })
@@ -145,18 +158,25 @@ const saveBattlecard = async (battlecardData) => {
 };
 
 const validateAndParseJSON = (response) => {
+    console.log('Validating JSON response:', response);
     if (!response) throw new Error('Empty response');
 
     try {
-        return JSON.parse(response);
+        const parsed = JSON.parse(response);
+        console.log('Successfully parsed JSON:', parsed);
+        return parsed;
     } catch (error) {
         console.error('JSON Parse Error:', error);
+        console.log('Failed response content:', response);
         throw new Error('Invalid JSON response');
     }
 };
 
 const generateAndStoreFacts = async (competitorName, companyName, competitorUuid) => {
-    const prompt = `Return only a JSON object with researched facts about ${competitorName} vs ${companyName}. Format:
+    console.log('Starting fact generation for:', competitorName);
+    const prompt = `You are a JSON API endpoint. Return a valid JSON object containing researched facts about ${competitorName} as a competitor to ${companyName}.
+
+The response must be a single JSON object with this exact structure:
 {
     "facts": [
         {
@@ -173,12 +193,13 @@ const generateAndStoreFacts = async (competitorName, companyName, competitorUuid
 }`;
 
     try {
+        console.log('Sending fact generation prompt:', prompt);
         const response = await generateContentSpecificModel({
             model: 'claude-3.5-sonnet',
             messages: [
                 {
                     role: 'system',
-                    content: 'You are a JSON API. Never include explanations or text outside the JSON object. Return only valid JSON.'
+                    content: 'You are a JSON API endpoint. Only return valid JSON. No markdown, no explanations, no additional text.'
                 },
                 {
                     role: 'user',
@@ -187,8 +208,10 @@ const generateAndStoreFacts = async (competitorName, companyName, competitorUuid
             ],
             temperature: 0.1
         });
+        console.log('Raw fact generation response:', response);
 
         const parsedResponse = validateAndParseJSON(response);
+        console.log('Parsed facts:', parsedResponse);
 
         // Store each fact in the database
         for (const fact of parsedResponse.facts) {
@@ -210,7 +233,7 @@ const generateAndStoreFacts = async (competitorName, companyName, competitorUuid
         // After facts are generated, create the battlecard content
         battlecardData.value = await generateBattlecardContent(competitiveFacts.value, competitorName, userStore.prospectUrl);
     } catch (error) {
-        console.error('Error generating facts:', error);
+        console.error('Error in generateAndStoreFacts:', error);
         throw error;
     } finally {
         isLoading.value = false;
@@ -222,24 +245,66 @@ const handleSaveBattlecard = async () => {
         await saveBattlecard(battlecardData.value);
         // Add toast notification for success
         toast.add({ severity: 'success', summary: 'Success', detail: 'Battlecard saved successfully', life: 3000 });
+        router.push('/');
     } catch (error) {
         console.error('Error saving battlecard:', error);
         toast.add({ severity: 'error', summary: 'Error', detail: 'Failed to save battlecard', life: 3000 });
     }
 };
 
+const getFreshFacts = async (competitorUuid) => {
+    const fourteenDaysAgo = new Date();
+    fourteenDaysAgo.setDate(fourteenDaysAgo.getDate() - 14);
+
+    // Query existing facts
+    const { data: existingFacts, error } = await supabase.from('competitor_facts').select('*').eq('competitor_uuid', competitorUuid).gte('created_at', fourteenDaysAgo.toISOString());
+
+    if (error) throw error;
+
+    if (existingFacts && existingFacts.length > 0) {
+        console.log('Using existing fresh facts');
+        return existingFacts;
+    }
+
+    // If no fresh facts exist, regenerate them
+    console.log('Generating new facts');
+    const { data: competitor } = await supabase.from('companies').select('company_name, company_domain').eq('company_uuid', competitorUuid).single();
+
+    if (!competitor) throw new Error('Competitor not found');
+
+    const newFacts = await generateAndStoreFacts(competitor.company_name, userStore.userDetails.company_name, competitorUuid);
+
+    // Upsert the new facts
+    const { error: upsertError } = await supabase.from('competitor_facts').upsert(
+        newFacts.map((fact) => ({
+            competitor_uuid: competitorUuid,
+            fact_type: fact.type,
+            fact_content: fact.fact,
+            fact_source: fact.source,
+            created_at: new Date().toISOString()
+        }))
+    );
+
+    if (upsertError) throw upsertError;
+
+    return newFacts;
+};
+
 onMounted(async () => {
     try {
+        const facts = await getFreshFacts(competitorUuid);
+        competitiveFacts.value = facts;
+
         // Get company details using the competitor_uuid directly
         const { data: company, error: companyError } = await supabase.from('companies').select('company_uuid, company_name').eq('company_uuid', competitorUuid).single();
 
         if (companyError) throw companyError;
 
-        if (company && userStore.userDetails.company_name) {
-            await generateAndStoreFacts(company.company_name, userStore.userDetails.company_name, company.company_uuid);
-        }
+        // After facts are generated, create the battlecard content
+        battlecardData.value = await generateBattlecardContent(competitiveFacts.value, company.company_name, userStore.prospectUrl);
     } catch (error) {
-        console.error('Error fetching competitor details:', error);
+        console.error('Error generating facts:', error);
+    } finally {
         isLoading.value = false;
     }
 });

@@ -17,7 +17,8 @@ export const useUserStore = defineStore('user', {
         competitors: [],
         loading: false,
         error: null,
-        prospectUrl: ''
+        prospectUrl: null,
+        prospectUuid: null
     }),
 
     getters: {
@@ -211,8 +212,37 @@ export const useUserStore = defineStore('user', {
             }
         },
 
+        async updateCompanyDetails() {
+            try {
+                if (!this.userDetails.company_name) return;
+
+                // Try to get company logo from Clearbit
+                const response = await fetch(`https://autocomplete.clearbit.com/v1/companies/suggest?query=${this.userDetails.company_name}`);
+                const data = await response.json();
+                const companyLogo = data.length > 0 ? data[0].logo : null;
+
+                // Update user details in database with company logo
+                const { error } = await supabase.from('user_storage').update({ company_logo: companyLogo }).eq('user_uuid', this.userDetails.user_uuid);
+
+                if (error) throw error;
+
+                // Update local state
+                this.userDetails = {
+                    ...this.userDetails,
+                    company_logo: companyLogo
+                };
+            } catch (error) {
+                console.error('Error updating company details:', error);
+                throw error;
+            }
+        },
+
         setProspectUrl(url) {
             this.prospectUrl = url;
+        },
+
+        setProspectUuid(uuid) {
+            this.prospectUuid = uuid;
         }
     }
 });

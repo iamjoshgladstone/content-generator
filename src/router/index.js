@@ -27,9 +27,19 @@ const router = createRouter({
                     component: () => import('@/views/ConfigureCompetitors.vue')
                 },
                 {
+                    path: 'settings',
+                    name: 'settings',
+                    component: () => import('@/views/pages/Settings.vue')
+                },
+                {
                     path: ':competitor_uuid',
                     name: 'generate',
                     component: () => import('@/views/GenerateBattlecard.vue')
+                },
+                {
+                    path: 'battlecard/:battlecard_uuid',
+                    name: 'battlecard',
+                    component: () => import('@/views/BattlecardView.vue')
                 }
             ]
         },

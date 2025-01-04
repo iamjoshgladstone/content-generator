@@ -1,21 +1,33 @@
 import { ref } from 'vue';
 
 const cleanJSONResponse = (response) => {
-    // Remove any markdown code blocks
-    let cleaned = response.replace(/```json\s*|\s*```/g, '');
+    console.log('Cleaning JSON response:', response);
 
-    // Find the first occurrence of '{'
+    // First, normalize line endings and remove any markdown
+    let cleaned = response
+        .replace(/\r?\n/g, '') // Remove line breaks
+        .replace(/```json\s*|\s*```/g, '')
+        .trim();
+
+    // Find the JSON boundaries
     const startIndex = cleaned.indexOf('{');
-    if (startIndex === -1) return null;
-
-    // Find the last occurrence of '}'
     const endIndex = cleaned.lastIndexOf('}');
-    if (endIndex === -1) return null;
 
-    // Extract just the JSON object
+    if (startIndex === -1 || endIndex === -1) {
+        console.error('No valid JSON object found in response');
+        return null;
+    }
+
     cleaned = cleaned.substring(startIndex, endIndex + 1);
 
-    return cleaned;
+    // Validate the JSON structure
+    try {
+        JSON.parse(cleaned); // Test if it's valid JSON
+        return cleaned;
+    } catch (error) {
+        console.error('Invalid JSON structure:', error);
+        return null;
+    }
 };
 
 export function useChatCompletion() {

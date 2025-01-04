@@ -16,6 +16,8 @@ import '@/assets/tailwind.css';
 const app = createApp(App);
 const pinia = createPinia();
 
+app.use(pinia);
+
 const MyPreset = definePreset(Aura, {
     semantic: {
         primary: {
@@ -34,7 +36,6 @@ const MyPreset = definePreset(Aura, {
     }
 });
 
-app.use(router);
 app.use(PrimeVue, {
     theme: {
         preset: MyPreset,
@@ -43,8 +44,9 @@ app.use(PrimeVue, {
         }
     }
 });
+
+app.use(router);
 app.use(ToastService);
 app.use(ConfirmationService);
 app.component('Toast', Toast);
 app.mount('#app');
-app.use(pinia);

@@ -1,7 +1,9 @@
 <script setup>
 import { useLayout } from '@/layout/composables/layout';
+import { useUserStore } from '@/stores/userStore';
 
 const { toggleMenu, toggleDarkMode, isDarkTheme } = useLayout();
+const userStore = useUserStore();
 </script>
 
 <template>
@@ -35,7 +37,7 @@ const { toggleMenu, toggleDarkMode, isDarkTheme } = useLayout();
 
             <div class="layout-topbar-menu hidden lg:block">
                 <div class="layout-topbar-menu-content">
-                    <router-link to="/settings" class="layout-topbar-action">
+                    <router-link :to="`/${userStore.userDetails?.user_id}/settings`" class="layout-topbar-action">
                         <i class="pi pi-user"></i>
                         <span>Profile</span>
                     </router-link>

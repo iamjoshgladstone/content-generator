@@ -19,7 +19,7 @@ const model = ref([
     },
     {
         label: 'Configure',
-        items: [{ label: 'Competitors', icon: 'pi pi-fw pi-cog', to: '/configure' }]
+        items: [{ label: 'Competitors', icon: 'pi pi-fw pi-cog', to: `/${userStore.userDetails?.user_id}/configure` }]
     },
     {
         label: 'Generate'
@@ -80,6 +80,9 @@ const handleGenerateBattlecard = async () => {
         } else {
             prospectUuid = existingProspect.prospect_uuid;
         }
+
+        // Store the prospect UUID in userStore
+        userStore.setProspectUuid(prospectUuid);
 
         // Route to generate page with user_id and competitor_uuid
         router.push(`/${userStore.userDetails.user_id}/${company.company_uuid}`);
