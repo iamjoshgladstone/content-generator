@@ -7,9 +7,9 @@ const router = createRouter({
     routes: [
         {
             path: '/',
-            redirect: (to) => {
+            redirect: () => {
                 const userStore = useUserStore();
-                return `/${userStore.userDetails?.user_id || ''}`;
+                return userStore.userDetails?.user_id ? `/${userStore.userDetails.user_id}` : '/auth/login';
             }
         },
         {
@@ -42,11 +42,6 @@ const router = createRouter({
                     component: () => import('@/views/BattlecardView.vue')
                 }
             ]
-        },
-        {
-            path: '/landing',
-            name: 'landing',
-            component: () => import('@/views/pages/Landing.vue')
         },
         {
             path: '/pages/notfound',
