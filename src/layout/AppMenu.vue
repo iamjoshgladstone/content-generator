@@ -1,11 +1,15 @@
 <script setup>
 import { useUserStore } from '@/stores/userStore';
+import { supabase } from '@/utils/supabase';
+import Button from 'primevue/button';
 import Dropdown from 'primevue/dropdown';
 import InputText from 'primevue/inputtext';
 import { onMounted, ref } from 'vue';
+import { useRouter } from 'vue-router';
 import AppMenuItem from './AppMenuItem.vue';
 
 const userStore = useUserStore();
+const router = useRouter();
 
 // Menu model
 const model = ref([
@@ -39,6 +43,50 @@ onMounted(async () => {
         console.error('Error loading competitors:', error);
     }
 });
+
+const handleGenerateBattlecard = async () => {
+    if (!selectedCompetitor.value || !prospectUrl.value) {
+        console.error('Please select a competitor and enter a prospect URL');
+        return;
+    }
+
+    try {
+        // Store the prospect URL in userStore
+        userStore.setProspectUrl(prospectUrl.value);
+
+        // Get competitor UUID from companies table
+        const { data: company, error: companyError } = await supabase.from('companies').select('company_uuid').eq('company_domain', selectedCompetitor.value).single();
+
+        if (companyError) throw companyError;
+
+        // Check if prospect exists
+        const { data: existingProspect, error: searchError } = await supabase.from('prospects').select('prospect_uuid').ilike('prospect_url', `%${prospectUrl.value}%`).single();
+
+        let prospectUuid;
+
+        if (searchError && searchError.code !== 'PGRST116') {
+            throw searchError;
+        }
+
+        if (!existingProspect) {
+            const { data: newProspect, error: createError } = await supabase
+                .from('prospects')
+                .insert([{ prospect_url: prospectUrl.value }])
+                .select('prospect_uuid')
+                .single();
+
+            if (createError) throw createError;
+            prospectUuid = newProspect.prospect_uuid;
+        } else {
+            prospectUuid = existingProspect.prospect_uuid;
+        }
+
+        // Route to generate page with user_id and competitor_uuid
+        router.push(`/${userStore.userDetails.user_id}/${company.company_uuid}`);
+    } catch (error) {
+        console.error('Error handling battlecard generation:', error);
+    }
+};
 </script>
 
 <template>
@@ -59,6 +107,9 @@ onMounted(async () => {
                 <!-- Input field for prospect URL -->
                 <li>
                     <InputText v-model="prospectUrl" placeholder="Enter Prospect URL" class="w-full" />
+                </li>
+                <li>
+                    <Button label="Generate Battlecard" @click="handleGenerateBattlecard" class="w-full mt-3" :disabled="!selectedCompetitor || !prospectUrl" />
                 </li>
             </ul>
         </li>

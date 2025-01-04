@@ -1,5 +1,23 @@
 import { ref } from 'vue';
 
+const cleanJSONResponse = (response) => {
+    // Remove any markdown code blocks
+    let cleaned = response.replace(/```json\s*|\s*```/g, '');
+
+    // Find the first occurrence of '{'
+    const startIndex = cleaned.indexOf('{');
+    if (startIndex === -1) return null;
+
+    // Find the last occurrence of '}'
+    const endIndex = cleaned.lastIndexOf('}');
+    if (endIndex === -1) return null;
+
+    // Extract just the JSON object
+    cleaned = cleaned.substring(startIndex, endIndex + 1);
+
+    return cleaned;
+};
+
 export function useChatCompletion() {
     const loading = ref(false);
 
@@ -82,14 +100,7 @@ export function useChatCompletion() {
 
             const result = await response.json();
             let messageContent = result.choices[0].message.content;
-
-            // Clean and parse JSON content
-            messageContent = messageContent
-                .replace(/```json/g, '')
-                .replace(/```/g, '')
-                .trim();
-
-            return messageContent;
+            return cleanJSONResponse(messageContent);
         } catch (error) {
             console.error('Error generating content:', error.message);
             throw error;

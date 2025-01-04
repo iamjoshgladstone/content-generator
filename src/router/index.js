@@ -1,4 +1,4 @@
-import AppLayout from '@/layout/AppLayout.vue';
+import { useUserStore } from '@/stores/userStore';
 import { createRouter, createWebHistory } from 'vue-router';
 import { setupAuthGuards } from './guards';
 
@@ -7,22 +7,29 @@ const router = createRouter({
     routes: [
         {
             path: '/',
-            component: AppLayout,
+            redirect: (to) => {
+                const userStore = useUserStore();
+                return `/${userStore.userDetails?.user_id || ''}`;
+            }
+        },
+        {
+            path: '/:user_id',
+            component: () => import('@/layout/AppLayout.vue'),
             children: [
                 {
-                    path: '/',
+                    path: '',
                     name: 'dashboard',
                     component: () => import('@/views/Dashboard.vue')
                 },
                 {
-                    path: '/configure',
+                    path: 'configure',
                     name: 'configure',
                     component: () => import('@/views/ConfigureCompetitors.vue')
                 },
                 {
-                    path: '/settings',
-                    name: 'settings',
-                    component: () => import('@/views/pages/Settings.vue')
+                    path: ':competitor_uuid',
+                    name: 'generate',
+                    component: () => import('@/views/GenerateBattlecard.vue')
                 }
             ]
         },

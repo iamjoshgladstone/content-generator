@@ -16,7 +16,8 @@ export const useUserStore = defineStore('user', {
         },
         competitors: [],
         loading: false,
-        error: null
+        error: null,
+        prospectUrl: ''
     }),
 
     getters: {
@@ -208,6 +209,10 @@ export const useUserStore = defineStore('user', {
                 console.error('Error updating competitors in store:', error);
                 return false;
             }
+        },
+
+        setProspectUrl(url) {
+            this.prospectUrl = url;
         }
     }
 });
