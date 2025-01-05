@@ -24,7 +24,10 @@ const getBattlecardPreviews = async () => {
             battlecard_name,
             prospect_uuid,
             battlecard_json,
-            prospects (prospect_url)
+            prospects (
+                prospect_name,
+                prospect_url
+            )
         `
         )
         .eq('user_uuid', userStore.userDetails.user_uuid);
@@ -35,7 +38,8 @@ const getBattlecardPreviews = async () => {
     return data.map((card) => ({
         ...card,
         competitor_domain: card.battlecard_json?.overview?.competitor || 'Unknown Competitor',
-        prospect_url: card.prospects?.prospect_url || 'No prospect URL'
+        prospect_name: card.prospects?.prospect_name || 'No prospect listed',
+        prospect_url: card.prospects?.prospect_url || ''
     }));
 };
 
@@ -61,7 +65,7 @@ const groupedBattlecards = computed(() => {
     }
 
     return battlecards.value.reduce((groups, card) => {
-        const key = filterType.value === 'prospect' ? card.prospect_url || 'No Prospect' : card.competitor_domain || 'Unknown Competitor';
+        const key = filterType.value === 'prospect' ? card.prospect_name || 'No Prospect' : card.competitor_domain || 'Unknown Competitor';
 
         if (!groups[key]) {
             groups[key] = [];

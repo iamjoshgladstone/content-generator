@@ -5,6 +5,7 @@ import { supabase } from '@/utils/supabase';
 import Button from 'primevue/button';
 import Dropdown from 'primevue/dropdown';
 import InputText from 'primevue/inputtext';
+import { useToast } from 'primevue/usetoast';
 import { computed, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import AppMenuItem from './AppMenuItem.vue';
@@ -12,6 +13,18 @@ import AppMenuItem from './AppMenuItem.vue';
 const userStore = useUserStore();
 const router = useRouter();
 const contentStore = useContentStore();
+const toast = useToast();
+
+const getProspectName = async (url) => {
+    try {
+        const urlWithProtocol = url.startsWith('http') ? url : `https://${url}`;
+        const domain = new URL(urlWithProtocol).hostname.replace('www.', '');
+        return domain.split('.')[0];
+    } catch (error) {
+        console.error('Error parsing URL:', error);
+        return null;
+    }
+};
 
 // Menu model
 const model = ref([
@@ -49,16 +62,15 @@ const handleGenerateBattlecard = async () => {
         contentStore.clearBattlecardData();
         contentStore.clearCompetitiveFacts();
 
-        // Store the prospect URL in userStore
-        userStore.setProspectUrl(prospectUrl.value);
+        // Get prospect name first
+        const prospectName = await getProspectName(prospectUrl.value);
 
-        // Get competitor UUID from companies table
-        const { data: company, error: companyError } = await supabase.from('companies').select('company_uuid').eq('company_domain', selectedCompetitor.value).single();
+        if (!prospectName) {
+            throw new Error('Could not determine prospect name from URL');
+        }
 
-        if (companyError) throw companyError;
-
-        // Check if prospect exists
-        const { data: existingProspect, error: searchError } = await supabase.from('prospects').select('prospect_uuid').ilike('prospect_url', `%${prospectUrl.value}%`).single();
+        // Check if prospect exists by name or URL
+        const { data: existingProspect, error: searchError } = await supabase.from('prospects').select('prospect_uuid, prospect_name, prospect_url').or(`prospect_name.ilike.${prospectName},prospect_url.ilike.%${prospectUrl.value}%`).single();
 
         let prospectUuid;
 
@@ -67,9 +79,15 @@ const handleGenerateBattlecard = async () => {
         }
 
         if (!existingProspect) {
+            // Create new prospect with both name and URL
             const { data: newProspect, error: createError } = await supabase
                 .from('prospects')
-                .insert([{ prospect_url: prospectUrl.value }])
+                .insert([
+                    {
+                        prospect_url: prospectUrl.value,
+                        prospect_name: prospectName
+                    }
+                ])
                 .select('prospect_uuid')
                 .single();
 
@@ -77,15 +95,31 @@ const handleGenerateBattlecard = async () => {
             prospectUuid = newProspect.prospect_uuid;
         } else {
             prospectUuid = existingProspect.prospect_uuid;
+            // Update existing prospect if name is missing
+            if (!existingProspect.prospect_name) {
+                await supabase.from('prospects').update({ prospect_name: prospectName }).eq('prospect_uuid', prospectUuid);
+            }
         }
 
-        // Store the prospect UUID in userStore
+        // Store the prospect URL and UUID in userStore
+        userStore.setProspectUrl(prospectUrl.value);
         userStore.setProspectUuid(prospectUuid);
 
-        // Route to generate page with user_id and competitor_uuid
+        // Get competitor UUID from companies table
+        const { data: company, error: companyError } = await supabase.from('companies').select('company_uuid').eq('company_domain', selectedCompetitor.value).single();
+
+        if (companyError) throw companyError;
+
+        // Route to generate page
         router.push(`/${userStore.userDetails.user_id}/${company.company_uuid}`);
     } catch (error) {
         console.error('Error handling battlecard generation:', error);
+        toast.add({
+            severity: 'error',
+            summary: 'Error',
+            detail: 'Failed to initialize battlecard generation',
+            life: 3000
+        });
     }
 };
 </script>
