@@ -1,4 +1,5 @@
 <script setup>
+import { useContentStore } from '@/stores/contentStore';
 import { supabase } from '@/utils/supabase';
 import Column from 'primevue/column';
 import DataTable from 'primevue/datatable';
@@ -7,10 +8,19 @@ import { useRoute, useRouter } from 'vue-router';
 
 const route = useRoute();
 const router = useRouter();
+const contentStore = useContentStore();
 const competitorUuid = route.params.competitor_uuid;
 const facts = ref([]);
 
 onMounted(async () => {
+    // Get all facts used in the battlecard
+    const usedFactUuids = new Set([
+        ...(contentStore.battlecardData?.overview?.factsUsed || []),
+        ...(contentStore.battlecardData?.strengths?.sections?.flatMap((s) => s.factsUsed) || []),
+        ...(contentStore.battlecardData?.counter?.sections?.flatMap((s) => s.factsUsed) || [])
+    ]);
+
+    // Fetch all facts for this competitor
     const { data, error } = await supabase.from('competitor_facts').select('*').eq('competitor_uuid', competitorUuid);
 
     if (error) {
@@ -18,7 +28,8 @@ onMounted(async () => {
         return;
     }
 
-    facts.value = data;
+    // Filter facts to only include those used in the battlecard
+    facts.value = data.filter((fact) => usedFactUuids.has(fact.fact_uuid));
 });
 
 const formatDate = (date) => {

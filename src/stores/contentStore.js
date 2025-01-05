@@ -1,35 +1,39 @@
 import { defineStore } from 'pinia';
+import { ref } from 'vue';
 
-export const useContentStore = defineStore('content', {
-    state: () => ({
-        competitiveFacts: [],
-        battlecardData: null,
-        competitorUuid: null,
-        prospectUrl: null
-    }),
+export const useContentStore = defineStore('content', () => {
+    const battlecardData = ref(null);
+    const competitiveFacts = ref([]);
+    const competitorUuid = ref(null);
 
-    actions: {
-        setCompetitiveFacts(facts) {
-            this.competitiveFacts = facts;
-        },
+    const setBattlecardData = (data) => {
+        battlecardData.value = data;
+    };
 
-        setBattlecardData(data) {
-            this.battlecardData = data;
-        },
+    const setCompetitiveFacts = (facts) => {
+        competitiveFacts.value = facts;
+    };
 
-        setCompetitorUuid(uuid) {
-            this.competitorUuid = uuid;
-        },
+    const setCompetitorUuid = (uuid) => {
+        competitorUuid.value = uuid;
+    };
 
-        setProspectUrl(url) {
-            this.prospectUrl = url;
-        },
+    const clearBattlecardData = () => {
+        battlecardData.value = null;
+    };
 
-        clearContent() {
-            this.competitiveFacts = [];
-            this.battlecardData = null;
-            this.competitorUuid = null;
-            this.prospectUrl = null;
-        }
-    }
+    const clearCompetitiveFacts = () => {
+        competitiveFacts.value = [];
+    };
+
+    return {
+        battlecardData,
+        competitiveFacts,
+        competitorUuid,
+        setBattlecardData,
+        setCompetitiveFacts,
+        setCompetitorUuid,
+        clearBattlecardData,
+        clearCompetitiveFacts
+    };
 });

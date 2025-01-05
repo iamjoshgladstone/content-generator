@@ -1,4 +1,5 @@
 <script setup>
+import { useContentStore } from '@/stores/contentStore';
 import { useUserStore } from '@/stores/userStore';
 import { supabase } from '@/utils/supabase';
 import Button from 'primevue/button';
@@ -10,6 +11,7 @@ import AppMenuItem from './AppMenuItem.vue';
 
 const userStore = useUserStore();
 const router = useRouter();
+const contentStore = useContentStore();
 
 // Menu model
 const model = ref([
@@ -43,6 +45,10 @@ const handleGenerateBattlecard = async () => {
     }
 
     try {
+        // Clear the content store first
+        contentStore.clearBattlecardData();
+        contentStore.clearCompetitiveFacts();
+
         // Store the prospect URL in userStore
         userStore.setProspectUrl(prospectUrl.value);
 

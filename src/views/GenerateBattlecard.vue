@@ -44,14 +44,24 @@ const getProspectName = async (prospectUrl) => {
 
 const generateBattlecardContent = async (facts, competitorName, prospectUrl) => {
     console.log('Starting battlecard generation for:', competitorName);
-    stage.value = 'customizing';
-    progress.value = 50;
+    stage.value = 'facts';
+    progress.value = 0;
+
+    // Simulate research progress
+    const progressInterval = setInterval(() => {
+        if (progress.value < 45) {
+            progress.value += 1;
+        }
+    }, 100);
 
     // Get prospect name first
     console.log('Getting prospect name for:', prospectUrl);
     const prospectName = await getProspectName(prospectUrl);
     console.log('Retrieved prospect name:', prospectName);
-    progress.value = 60;
+
+    clearInterval(progressInterval);
+    stage.value = 'customizing';
+    progress.value = 50;
 
     // Generate Overview
     console.log('Generating overview section');
@@ -176,20 +186,33 @@ const validateAndParseJSON = (response) => {
 
 const generateAndStoreFacts = async (competitorName, companyName, competitorUuid) => {
     console.log('Starting fact generation for:', competitorName);
-    const prompt = `You are a JSON API endpoint. Return a valid JSON object containing researched facts about ${competitorName} as a competitor to ${companyName}. In particular, you need to find the top strengths and weaknesses of ${competitorName} as a competitor to ${companyName}.
+    const prompt = `You are a competitive intelligence researcher. Return a valid JSON object containing thoroughly researched facts about ${competitorName} as a competitor to ${companyName}.
+
+    Important Requirements:
+    1. Each fact must be supported by at least 2 different, recent (within last 2 years) sources
+    2. Sources must be from reputable websites (news articles, company announcements, SEC filings, industry analysis)
+    3. Do NOT use review sites like G2, Capterra, or TrustRadius
+    4. Facts should focus on significant competitive differentiators, not basic feature comparisons
+    5. Include specific details and metrics when available
 
     The response must be a single JSON object with this exact structure:
     {
         "facts": [
             {
                 "type": "Strength",
-                "fact": "A specific strength fact",
-                "source": "A valid URL"
+                "fact": "A specific strength fact with metrics and details",
+                "sources": [
+                    "URL to first supporting source",
+                    "URL to second supporting source"
+                ]
             },
             {
                 "type": "Weakness",
-                "fact": "A specific weakness fact",
-                "source": "A valid URL"
+                "fact": "A specific weakness fact with metrics and details",
+                "sources": [
+                    "URL to first supporting source",
+                    "URL to second supporting source"
+                ]
             }
         ]
     }`;
@@ -201,7 +224,7 @@ const generateAndStoreFacts = async (competitorName, companyName, competitorUuid
             messages: [
                 {
                     role: 'system',
-                    content: 'You are a JSON API endpoint. Only return valid JSON. No markdown, no explanations, no additional text.'
+                    content: 'You are a competitive intelligence researcher focused on finding concrete, well-sourced facts. Only return valid JSON. No markdown, no explanations, no additional text.'
                 },
                 {
                     role: 'user',
@@ -210,28 +233,42 @@ const generateAndStoreFacts = async (competitorName, companyName, competitorUuid
             ],
             temperature: 0.1
         });
-        console.log('Raw fact generation response:', response);
 
         const parsedResponse = validateAndParseJSON(response);
         console.log('Parsed facts:', parsedResponse);
 
         const storedFacts = [];
 
-        // Store each fact in the database
+        // Store each fact with multiple sources
         for (const fact of parsedResponse.facts) {
+            // Store the primary fact with first source
             const { data: newFact, error } = await supabase
                 .from('competitor_facts')
                 .insert({
                     competitor_uuid: competitorUuid,
                     fact_type: fact.type,
                     fact_content: fact.fact,
-                    fact_source: fact.source,
+                    fact_source: fact.sources[0],
                     created_at: new Date().toISOString()
                 })
                 .select('*')
                 .single();
 
             if (error) throw error;
+
+            // Store additional sources as separate fact entries with same content
+            for (let i = 1; i < fact.sources.length; i++) {
+                const { error: additionalError } = await supabase.from('competitor_facts').insert({
+                    competitor_uuid: competitorUuid,
+                    fact_type: fact.type,
+                    fact_content: fact.fact,
+                    fact_source: fact.sources[i],
+                    created_at: new Date().toISOString()
+                });
+
+                if (additionalError) throw additionalError;
+            }
+
             storedFacts.push(newFact);
         }
 
