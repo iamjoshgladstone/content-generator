@@ -467,16 +467,78 @@ onMounted(async () => {
 
 <template>
     <div class="card">
-        <div v-if="isLoading || stage === 'error'">
+        <div v-if="isLoading">
             <GenerationProgress :stage="stage" :progress="progress" />
-            <div v-if="stage === 'error'" class="error-message">
-                <p class="text-red-600 text-center mt-4">An error occurred during generation. Please try again later.</p>
-                <div class="flex justify-center mt-4">
-                    <Button label="Retry" icon="pi pi-refresh" @click="$router.go(0)" severity="primary" />
+        </div>
+
+        <div v-else class="battlecard-container">
+            <!-- Save Button -->
+            <div class="button-group">
+                <Button label="Save Battlecard" icon="pi pi-save" @click="handleSaveBattlecard" class="save-button" severity="primary" />
+                <Button label="View Raw Facts" icon="pi pi-table" @click="handleViewRawFacts" class="view-facts-button" severity="secondary" />
+            </div>
+
+            <!-- Overview Section -->
+            <div class="section overview-section" v-if="contentStore.battlecardData?.overview">
+                <div class="section-header">
+                    <h1 class="section-title">{{ contentStore.battlecardData.overview.title }}</h1>
+                    <Button icon="pi pi-refresh" @click="regenerateSection('overview')" class="regenerate-button" severity="secondary" text />
+                </div>
+                <div class="content" v-html="contentStore.battlecardData.overview.bodyHtml"></div>
+            </div>
+
+            <!-- Competitive Sections Container -->
+            <div class="competitive-sections">
+                <!-- Strengths Section -->
+                <div class="section strengths-section" v-if="contentStore.battlecardData?.strengths">
+                    <div class="section-header">
+                        <h2 class="section-title">{{ contentStore.battlecardData.strengths.title }}</h2>
+                        <Button icon="pi pi-refresh" @click="regenerateSection('strengths')" class="regenerate-button" severity="secondary" text />
+                    </div>
+                    <div class="prospect-url">for {{ userStore.prospectUrl }}</div>
+                    <div class="content win-content">
+                        <div v-for="(section, index) in contentStore.battlecardData.strengths.sections" :key="index" class="win-section">
+                            <h2>
+                                <strong>{{ section.summary }}</strong>
+                            </h2>
+                            <ul>
+                                <li><strong>Context:</strong> {{ section.context }}</li>
+                            </ul>
+                            <div class="fact-sources">
+                                <span class="text-sm text-gray-600">Sources:</span>
+                                <div class="source-links">
+                                    <a v-for="(factId, idx) in section.factsUsed" :key="factId" :href="contentStore.competitiveFacts.find((f) => f.fact_uuid === factId)?.fact_source" target="_blank" class="source-link strength"> [{{ idx + 1 }}] </a>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Counter Section -->
+                <div class="section counter-section" v-if="contentStore.battlecardData?.counter">
+                    <div class="section-header">
+                        <h2 class="section-title">{{ contentStore.battlecardData.counter.title }}</h2>
+                        <Button icon="pi pi-refresh" @click="regenerateSection('counter')" class="regenerate-button" severity="secondary" text />
+                    </div>
+                    <div class="content lose-content">
+                        <div v-for="(section, index) in contentStore.battlecardData.counter.sections" :key="index" class="lose-section">
+                            <h2>
+                                <strong>{{ section.summary }}</strong>
+                            </h2>
+                            <ul>
+                                <li><strong>Context:</strong> {{ section.context }}</li>
+                            </ul>
+                            <div class="fact-sources">
+                                <span class="text-sm text-gray-600">Sources:</span>
+                                <div class="source-links">
+                                    <a v-for="(factId, idx) in section.factsUsed" :key="factId" :href="contentStore.competitiveFacts.find((f) => f.fact_uuid === factId)?.fact_source" target="_blank" class="source-link counter"> [{{ idx + 1 }}] </a>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
-        <!-- Rest of your existing template -->
     </div>
 </template>
 
