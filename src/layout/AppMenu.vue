@@ -4,7 +4,7 @@ import { supabase } from '@/utils/supabase';
 import Button from 'primevue/button';
 import Dropdown from 'primevue/dropdown';
 import InputText from 'primevue/inputtext';
-import { onMounted, ref } from 'vue';
+import { computed, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import AppMenuItem from './AppMenuItem.vue';
 
@@ -29,19 +29,11 @@ const model = ref([
 // Dropdown and input data
 const selectedCompetitor = ref(null);
 const prospectUrl = ref('');
-const competitors = ref([]);
-
-// Initialize competitors on mount
-onMounted(async () => {
-    try {
-        const userCompetitors = await userStore.fetchUserCompetitors();
-        competitors.value = userCompetitors.map((competitor) => ({
-            label: competitor.name,
-            value: competitor.website
-        }));
-    } catch (error) {
-        console.error('Error loading competitors:', error);
-    }
+const competitors = computed(() => {
+    return userStore.competitors.map((competitor) => ({
+        label: competitor.name,
+        value: competitor.website
+    }));
 });
 
 const handleGenerateBattlecard = async () => {

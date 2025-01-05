@@ -1,6 +1,7 @@
 <script setup>
 import GenerationProgress from '@/components/GenerationProgress.vue';
 import { useChatCompletion } from '@/service/useLLM';
+import { useContentStore } from '@/stores/contentStore';
 import { useUserStore } from '@/stores/userStore';
 import { supabase } from '@/utils/supabase';
 import Button from 'primevue/button';
@@ -16,9 +17,8 @@ const competitorUuid = route.params.competitor_uuid;
 const isLoading = ref(true);
 const stage = ref('facts');
 const progress = ref(0);
-const competitiveFacts = ref([]);
-const battlecardData = ref(null);
 const toast = useToast();
+const contentStore = useContentStore();
 
 const getProspectName = async (prospectUrl) => {
     const prompt = `Given this URL: ${prospectUrl}, return ONLY the company name as a plain text string. No JSON, no explanation, just the name. Example: if given "www.salesforce.com" return "Salesforce"`;
@@ -84,18 +84,19 @@ const generateBattlecardContent = async (facts, competitorName, prospectUrl) => 
     progress.value = 70;
 
     // Generate Why We Win
-    const strengthsPrompt = `Create a 'Why We Win' battlecard comparing ${userStore.userDetails.company_name} against ${competitorName} for prospect at ${prospectUrl}.
+    const strengthsPrompt = `Create a 'Why We Win' battlecard comparing ${userStore.userDetails.company_name} against ${competitorName} for prospect at ${prospectUrl}. You must research current news and updates about the prospect to understand what they care about.
     Use the following competitor facts: ${JSON.stringify(facts)}.
-    Return a JSON object with:
+    Return a JSON object with EXACTLY 3-6 strength sections, prioritizing the most recent or most relevant ones:
     {
         "title": "Why We Win",
-        "bodyHtml": "<div class='win-section'>
-            <h2><strong>🥊 [13-word summary of your strength vs their weakness]</strong></h2>
-            <ul>
-                <li><strong>Context:</strong> [Brief context explaining why this matters to ${prospectUrl}]</li>
-            </ul>
-        </div>",
-        "factsUsed": [array of fact_uuids used],
+        "sections": [
+            {
+                "summary": "🥊 [13-word summary of your strength vs their weakness]",
+                "context": "[Brief context explaining why this matters to ${prospectUrl}, and how ${userStore.userDetails.company_name} should leverage this to win the deal]",
+                "factsUsed": [array of fact_uuids used]
+            }
+            // ... 2-5 more sections
+        ],
         "competitor": "${competitorName}",
         "topic": "Strengths"
     }`;
@@ -109,18 +110,19 @@ const generateBattlecardContent = async (facts, competitorName, prospectUrl) => 
     progress.value = 85;
 
     // Generate Counter Their Strengths
-    const counterPrompt = `Create a 'Counter Their Strengths' battlecard for ${competitorName}.
+    const counterPrompt = `Create a 'Counter Their Strengths' card for ${competitorName}.
     Use the following facts: ${JSON.stringify(facts)}.
-    Return a JSON object with:
+    Return a JSON object with EXACTLY 3-6 sections about their strengths, prioritizing the most recent or most relevant ones:
     {
         "title": "Areas to Address",
-        "bodyHtml": "<div class='lose-section'>
-            <h2><strong>🪨 [13-word summary of their strength vs our weakness]</strong></h2>
-            <ul>
-                <li><strong>Context:</strong> [Brief context explaining the competitive dynamic]</li>
-            </ul>
-        </div>",
-        "factsUsed": [array of fact_uuids used],
+        "sections": [
+            {
+                "summary": "🪨 [13-word summary of their strength vs our weakness]",
+                "context": "[Brief context explaining the competitive dynamic, why this matters to  ${prospectUrl}, and how ${userStore.userDetails.company_name} should defend against it]",
+                "factsUsed": [array of fact_uuids used]
+            }
+            // ... 2-5 more sections
+        ],
         "competitor": "${competitorName}",
         "topic": "Counter"
     }`;
@@ -174,23 +176,23 @@ const validateAndParseJSON = (response) => {
 
 const generateAndStoreFacts = async (competitorName, companyName, competitorUuid) => {
     console.log('Starting fact generation for:', competitorName);
-    const prompt = `You are a JSON API endpoint. Return a valid JSON object containing researched facts about ${competitorName} as a competitor to ${companyName}.
+    const prompt = `You are a JSON API endpoint. Return a valid JSON object containing researched facts about ${competitorName} as a competitor to ${companyName}. In particular, you need to find the top strengths and weaknesses of ${competitorName} as a competitor to ${companyName}.
 
-The response must be a single JSON object with this exact structure:
-{
-    "facts": [
-        {
-            "type": "Strength",
-            "fact": "A specific strength fact",
-            "source": "A valid URL"
-        },
-        {
-            "type": "Weakness",
-            "fact": "A specific weakness fact",
-            "source": "A valid URL"
-        }
-    ]
-}`;
+    The response must be a single JSON object with this exact structure:
+    {
+        "facts": [
+            {
+                "type": "Strength",
+                "fact": "A specific strength fact",
+                "source": "A valid URL"
+            },
+            {
+                "type": "Weakness",
+                "fact": "A specific weakness fact",
+                "source": "A valid URL"
+            }
+        ]
+    }`;
 
     try {
         console.log('Sending fact generation prompt:', prompt);
@@ -213,6 +215,8 @@ The response must be a single JSON object with this exact structure:
         const parsedResponse = validateAndParseJSON(response);
         console.log('Parsed facts:', parsedResponse);
 
+        const storedFacts = [];
+
         // Store each fact in the database
         for (const fact of parsedResponse.facts) {
             const { data: newFact, error } = await supabase
@@ -220,29 +224,27 @@ The response must be a single JSON object with this exact structure:
                 .insert({
                     competitor_uuid: competitorUuid,
                     fact_type: fact.type,
-                    fact_text: fact.fact,
-                    fact_source: fact.source
+                    fact_content: fact.fact,
+                    fact_source: fact.source,
+                    created_at: new Date().toISOString()
                 })
                 .select('*')
                 .single();
 
             if (error) throw error;
-            competitiveFacts.value.push(newFact);
+            storedFacts.push(newFact);
         }
 
-        // After facts are generated, create the battlecard content
-        battlecardData.value = await generateBattlecardContent(competitiveFacts.value, competitorName, userStore.prospectUrl);
+        return storedFacts;
     } catch (error) {
         console.error('Error in generateAndStoreFacts:', error);
         throw error;
-    } finally {
-        isLoading.value = false;
     }
 };
 
 const handleSaveBattlecard = async () => {
     try {
-        await saveBattlecard(battlecardData.value);
+        await saveBattlecard(contentStore.battlecardData);
         // Add toast notification for success
         toast.add({ severity: 'success', summary: 'Success', detail: 'Battlecard saved successfully', life: 3000 });
         router.push('/');
@@ -290,20 +292,68 @@ const getFreshFacts = async (competitorUuid) => {
     return newFacts;
 };
 
+const handleViewRawFacts = () => {
+    router.push(`/${userStore.userDetails.user_id}/battlecard/${competitorUuid}/facts`);
+};
+
+const regenerateSection = async (section) => {
+    isLoading.value = true;
+    try {
+        let newContent;
+        const company = await supabase.from('companies').select('company_name').eq('company_uuid', contentStore.competitorUuid).single();
+
+        switch (section) {
+            case 'overview':
+                newContent = await generateBattlecardContent(contentStore.competitiveFacts, company.data.company_name, userStore.prospectUrl);
+                contentStore.setBattlecardData({
+                    ...contentStore.battlecardData,
+                    overview: newContent.overview
+                });
+                break;
+            case 'strengths':
+                newContent = await generateBattlecardContent(contentStore.competitiveFacts, company.data.company_name, userStore.prospectUrl);
+                contentStore.setBattlecardData({
+                    ...contentStore.battlecardData,
+                    strengths: newContent.strengths
+                });
+                break;
+            case 'counter':
+                newContent = await generateBattlecardContent(contentStore.competitiveFacts, company.data.company_name, userStore.prospectUrl);
+                contentStore.setBattlecardData({
+                    ...contentStore.battlecardData,
+                    counter: newContent.counter
+                });
+                break;
+        }
+        toast.add({ severity: 'success', summary: 'Success', detail: `${section} section regenerated`, life: 3000 });
+    } catch (error) {
+        console.error(`Error regenerating ${section} section:`, error);
+        toast.add({ severity: 'error', summary: 'Error', detail: `Failed to regenerate ${section} section`, life: 3000 });
+    } finally {
+        isLoading.value = false;
+    }
+};
+
 onMounted(async () => {
     try {
-        const facts = await getFreshFacts(competitorUuid);
-        competitiveFacts.value = facts;
+        // Check if we already have facts
+        if (!contentStore.competitiveFacts.length) {
+            const facts = await getFreshFacts(competitorUuid);
+            contentStore.setCompetitiveFacts(facts);
+        }
 
-        // Get company details using the competitor_uuid directly
-        const { data: company, error: companyError } = await supabase.from('companies').select('company_uuid, company_name').eq('company_uuid', competitorUuid).single();
+        // Check if we already have battlecard data
+        if (!contentStore.battlecardData) {
+            const { data: company, error: companyError } = await supabase.from('companies').select('company_uuid, company_name').eq('company_uuid', competitorUuid).single();
 
-        if (companyError) throw companyError;
+            if (companyError) throw companyError;
 
-        // After facts are generated, create the battlecard content
-        battlecardData.value = await generateBattlecardContent(competitiveFacts.value, company.company_name, userStore.prospectUrl);
+            const newBattlecardData = await generateBattlecardContent(contentStore.competitiveFacts, company.company_name, userStore.prospectUrl);
+            contentStore.setBattlecardData(newBattlecardData);
+        }
     } catch (error) {
         console.error('Error generating facts:', error);
+        toast.add({ severity: 'error', summary: 'Error', detail: 'Failed to generate content', life: 3000 });
     } finally {
         isLoading.value = false;
     }
@@ -318,37 +368,68 @@ onMounted(async () => {
 
         <div v-else class="battlecard-container">
             <!-- Save Button -->
-            <Button label="Save Battlecard" icon="pi pi-save" @click="handleSaveBattlecard" class="save-button" severity="primary" />
+            <div class="button-group">
+                <Button label="Save Battlecard" icon="pi pi-save" @click="handleSaveBattlecard" class="save-button" severity="primary" />
+                <Button label="View Raw Facts" icon="pi pi-table" @click="handleViewRawFacts" class="view-facts-button" severity="secondary" />
+            </div>
 
             <!-- Overview Section -->
-            <div class="section overview-section" v-if="battlecardData?.overview">
-                <h1 class="section-title">{{ battlecardData.overview.title }}</h1>
-                <div class="content" v-html="battlecardData.overview.bodyHtml"></div>
+            <div class="section overview-section" v-if="contentStore.battlecardData?.overview">
+                <div class="section-header">
+                    <h1 class="section-title">{{ contentStore.battlecardData.overview.title }}</h1>
+                    <Button icon="pi pi-refresh" @click="regenerateSection('overview')" class="regenerate-button" severity="secondary" text />
+                </div>
+                <div class="content" v-html="contentStore.battlecardData.overview.bodyHtml"></div>
             </div>
 
-            <!-- Strengths Section -->
-            <div class="section strengths-section" v-if="battlecardData?.strengths">
-                <div class="prospect-url">for {{ userStore.prospectUrl }}</div>
-                <div class="content win-content" v-html="battlecardData.strengths.bodyHtml"></div>
-                <div class="sources-container">
-                    <span class="sources-label">Sources:</span>
-                    <div class="sources-grid">
-                        <a v-for="(source, index) in battlecardData.strengths.factsUsed" :key="source" :href="competitiveFacts.find((f) => f.fact_uuid === source)?.fact_source" target="_blank" class="source-link strength">
-                            {{ index + 1 }}
-                        </a>
+            <!-- Competitive Sections Container -->
+            <div class="competitive-sections">
+                <!-- Strengths Section -->
+                <div class="section strengths-section" v-if="contentStore.battlecardData?.strengths">
+                    <div class="section-header">
+                        <h2 class="section-title">{{ contentStore.battlecardData.strengths.title }}</h2>
+                        <Button icon="pi pi-refresh" @click="regenerateSection('strengths')" class="regenerate-button" severity="secondary" text />
+                    </div>
+                    <div class="prospect-url">for {{ userStore.prospectUrl }}</div>
+                    <div class="content win-content">
+                        <div v-for="(section, index) in contentStore.battlecardData.strengths.sections" :key="index" class="win-section">
+                            <h2>
+                                <strong>{{ section.summary }}</strong>
+                            </h2>
+                            <ul>
+                                <li><strong>Context:</strong> {{ section.context }}</li>
+                            </ul>
+                            <div class="fact-sources">
+                                <span class="text-sm text-gray-600">Sources:</span>
+                                <div class="source-links">
+                                    <a v-for="(factId, idx) in section.factsUsed" :key="factId" :href="contentStore.competitiveFacts.find((f) => f.fact_uuid === factId)?.fact_source" target="_blank" class="source-link strength"> [{{ idx + 1 }}] </a>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
-            </div>
 
-            <!-- Counter Section -->
-            <div class="section counter-section" v-if="battlecardData?.counter">
-                <div class="content lose-content" v-html="battlecardData.counter.bodyHtml"></div>
-                <div class="sources-container">
-                    <span class="sources-label">Sources:</span>
-                    <div class="sources-grid">
-                        <a v-for="(source, index) in battlecardData.counter.factsUsed" :key="source" :href="competitiveFacts.find((f) => f.fact_uuid === source)?.fact_source" target="_blank" class="source-link counter">
-                            {{ index + 1 }}
-                        </a>
+                <!-- Counter Section -->
+                <div class="section counter-section" v-if="contentStore.battlecardData?.counter">
+                    <div class="section-header">
+                        <h2 class="section-title">{{ contentStore.battlecardData.counter.title }}</h2>
+                        <Button icon="pi pi-refresh" @click="regenerateSection('counter')" class="regenerate-button" severity="secondary" text />
+                    </div>
+                    <div class="content lose-content">
+                        <div v-for="(section, index) in contentStore.battlecardData.counter.sections" :key="index" class="lose-section">
+                            <h2>
+                                <strong>{{ section.summary }}</strong>
+                            </h2>
+                            <ul>
+                                <li><strong>Context:</strong> {{ section.context }}</li>
+                            </ul>
+                            <div class="fact-sources">
+                                <span class="text-sm text-gray-600">Sources:</span>
+                                <div class="source-links">
+                                    <a v-for="(factId, idx) in section.factsUsed" :key="factId" :href="contentStore.competitiveFacts.find((f) => f.fact_uuid === factId)?.fact_source" target="_blank" class="source-link counter"> [{{ idx + 1 }}] </a>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -368,10 +449,12 @@ onMounted(async () => {
     padding-top: 3rem;
 }
 
-.save-button {
+.button-group {
     position: absolute;
     top: 0;
     right: 0;
+    display: flex;
+    gap: 1rem;
 }
 
 .section {
@@ -477,5 +560,36 @@ onMounted(async () => {
 
 .lose-content {
     @apply text-red-800;
+}
+
+.competitive-sections {
+    @apply flex gap-6 mt-6;
+}
+
+.strengths-section,
+.counter-section {
+    @apply flex-1 flex flex-col;
+    min-width: 45%;
+}
+
+.win-section,
+.lose-section {
+    @apply border-b border-gray-200 last:border-b-0 py-4 first:pt-0 last:pb-0;
+}
+
+.fact-sources {
+    @apply mt-2 pt-2 border-t border-gray-200;
+}
+
+.source-links {
+    @apply mt-1 flex flex-wrap gap-2;
+}
+
+.section-header {
+    @apply flex justify-between items-center mb-4;
+}
+
+.regenerate-button {
+    @apply ml-2;
 }
 </style>

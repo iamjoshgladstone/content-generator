@@ -1,4 +1,4 @@
-import supabase from '@/utils/supabase';
+import { supabase } from '@/utils/supabase';
 import { defineStore } from 'pinia';
 
 export const useUserStore = defineStore('user', {
@@ -18,7 +18,8 @@ export const useUserStore = defineStore('user', {
         loading: false,
         error: null,
         prospectUrl: null,
-        prospectUuid: null
+        prospectUuid: null,
+        competitorSubscription: null
     }),
 
     getters: {
@@ -46,6 +47,8 @@ export const useUserStore = defineStore('user', {
                 if (user) {
                     this.isAuthenticated = true;
                     await this.fetchUserDetails(user);
+                    await this.fetchUserCompetitors();
+                    this.subscribeToCompetitors();
                     console.log(user);
                 }
             } catch (error) {
@@ -143,6 +146,7 @@ export const useUserStore = defineStore('user', {
         },
 
         clearUserState() {
+            this.unsubscribeFromCompetitors();
             this.isAuthenticated = false;
             this.userDetails = {
                 user_id: null,
@@ -171,32 +175,38 @@ export const useUserStore = defineStore('user', {
 
         async fetchUserCompetitors() {
             try {
-                // Step 1: Get all competitor_uuids for this user
-                const { data: userCompetitors, error: userCompetitorsError } = await supabase.from('user_competitors').select('competitor_uuid').eq('user_uuid', this.userDetails.user_uuid);
+                const { data: userCompetitors, error: pairsError } = await supabase.from('user_competitors').select('competitor_uuid').eq('user_uuid', this.userDetails.user_uuid);
 
-                if (userCompetitorsError) throw userCompetitorsError;
+                if (pairsError) throw pairsError;
 
-                if (!userCompetitors.length) return [];
+                if (!userCompetitors.length) {
+                    this.competitors = [];
+                    return [];
+                }
 
-                // Step 2: Get company details for each competitor_uuid
                 const { data: companies, error: companiesError } = await supabase
                     .from('companies')
                     .select('company_name, company_logo, company_domain')
                     .in(
                         'company_uuid',
-                        userCompetitors.map((uc) => uc.competitor_uuid)
+                        userCompetitors.map((p) => p.competitor_uuid)
                     );
 
                 if (companiesError) throw companiesError;
 
-                // Map the companies data to the expected format
-                return companies.map((company) => ({
+                // Map and store the competitors
+                const mappedCompetitors = companies.map((company) => ({
                     name: company.company_name,
                     logo_url: company.company_logo,
                     website: company.company_domain
                 }));
+
+                // Update store
+                this.competitors = mappedCompetitors;
+                return mappedCompetitors;
             } catch (error) {
                 console.error('Error fetching user competitors:', error);
+                this.competitors = [];
                 return [];
             }
         },
@@ -243,6 +253,35 @@ export const useUserStore = defineStore('user', {
 
         setProspectUuid(uuid) {
             this.prospectUuid = uuid;
+        },
+
+        subscribeToCompetitors() {
+            if (this.competitorSubscription) {
+                this.competitorSubscription.unsubscribe();
+            }
+
+            this.competitorSubscription = supabase
+                .channel('user-competitors')
+                .on(
+                    'postgres_changes',
+                    {
+                        event: '*',
+                        schema: 'public',
+                        table: 'user_competitors',
+                        filter: `user_uuid=eq.${this.userDetails.user_uuid}`
+                    },
+                    async () => {
+                        await this.fetchUserCompetitors();
+                    }
+                )
+                .subscribe();
+        },
+
+        unsubscribeFromCompetitors() {
+            if (this.competitorSubscription) {
+                this.competitorSubscription.unsubscribe();
+                this.competitorSubscription = null;
+            }
         }
     }
 });

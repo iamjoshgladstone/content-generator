@@ -40,6 +40,11 @@ const router = createRouter({
                     path: 'battlecard/:battlecard_uuid',
                     name: 'battlecard',
                     component: () => import('@/views/BattlecardView.vue')
+                },
+                {
+                    path: 'battlecard/:competitor_uuid/facts',
+                    name: 'battlecard-facts',
+                    component: () => import('@/views/BattlecardFacts.vue')
                 }
             ]
         },

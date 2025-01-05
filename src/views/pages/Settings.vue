@@ -8,12 +8,25 @@ const userStore = useUserStore();
 const router = useRouter();
 const toast = useToast();
 
+// Add this new ref to track edit states
+const editStates = ref({
+    firstName: false,
+    lastName: false,
+    companyName: false,
+    segment: false
+});
+
 const userSettings = ref({
     firstName: '',
     lastName: '',
     companyName: '',
     segment: null
 });
+
+// Add this function to toggle edit state
+const toggleEdit = (field) => {
+    editStates.value[field] = !editStates.value[field];
+};
 
 const segments = ref([
     { label: 'Growth', value: 'growth' },
@@ -58,6 +71,11 @@ const saveSettings = async () => {
 
         await userStore.updateUserDetails(updatedDetails);
 
+        // Reset all edit states to false
+        Object.keys(editStates.value).forEach((key) => {
+            editStates.value[key] = false;
+        });
+
         toast.add({
             severity: 'success',
             summary: 'Success',
@@ -87,17 +105,26 @@ const saveSettings = async () => {
                 <div class="flex flex-col gap-6">
                     <div>
                         <label for="firstName" class="block font-medium mb-2">First Name</label>
-                        <InputText id="firstName" v-model="userSettings.firstName" class="w-full" placeholder="Enter your first name" />
+                        <div class="flex items-center gap-2">
+                            <InputText id="firstName" v-model="userSettings.firstName" class="w-full" placeholder="Enter your first name" :disabled="!editStates.firstName" />
+                            <Button icon="pi pi-pencil" text @click="toggleEdit('firstName')" :class="{ 'text-primary': editStates.firstName }" aria-label="Edit first name" />
+                        </div>
                     </div>
 
                     <div>
                         <label for="lastName" class="block font-medium mb-2">Last Name</label>
-                        <InputText id="lastName" v-model="userSettings.lastName" class="w-full" placeholder="Enter your last name" />
+                        <div class="flex items-center gap-2">
+                            <InputText id="lastName" v-model="userSettings.lastName" class="w-full" placeholder="Enter your last name" :disabled="!editStates.lastName" />
+                            <Button icon="pi pi-pencil" text @click="toggleEdit('lastName')" :class="{ 'text-primary': editStates.lastName }" aria-label="Edit last name" />
+                        </div>
                     </div>
 
                     <div>
                         <label for="companyName" class="block font-medium mb-2">Company Name</label>
-                        <InputText id="companyName" v-model="userSettings.companyName" class="w-full" placeholder="Enter your company name" />
+                        <div class="flex items-center gap-2">
+                            <InputText id="companyName" v-model="userSettings.companyName" class="w-full" placeholder="Enter your company name" :disabled="!editStates.companyName" />
+                            <Button icon="pi pi-pencil" text @click="toggleEdit('companyName')" :class="{ 'text-primary': editStates.companyName }" aria-label="Edit company name" />
+                        </div>
                     </div>
 
                     <div>

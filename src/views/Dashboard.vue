@@ -76,7 +76,10 @@ onMounted(async () => {
 </script>
 
 <template>
-    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 p-6">
+    <div v-if="battlecards.length === 0" class="flex justify-center items-center h-screen">
+        <p class="text-2xl font-bold">No battlecards found. Please create a new battlecard.</p>
+    </div>
+    <div v-else class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 p-6">
         <div v-for="card in battlecards" :key="card.battlecard_uuid" @click="navigateToBattlecard(card.battlecard_uuid)" class="battlecard-preview">
             <div class="logos-container">
                 <img v-if="card.ourLogo" :src="card.ourLogo" alt="Our company" class="company-logo" />
