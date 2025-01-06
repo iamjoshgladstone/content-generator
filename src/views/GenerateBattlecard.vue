@@ -1,4 +1,5 @@
 <script setup>
+import ComparisonTable from '@/components/ComparisonTable.vue';
 import GenerationProgress from '@/components/GenerationProgress.vue';
 import { useChatCompletion } from '@/service/useLLM';
 import { useContentStore } from '@/stores/contentStore';
@@ -20,6 +21,23 @@ const progress = ref(0);
 const toast = useToast();
 const contentStore = useContentStore();
 
+const companyDomain = ref('');
+const getCompanyDomain = async () => {
+    const { data, error } = await supabase.from('companies').select('company_domain').eq('company_uuid', competitorUuid).single();
+
+    if (error) {
+        console.error('Error fetching company domain:', error);
+        return '';
+    }
+
+    companyDomain.value = data.company_domain;
+    return data.company_domain;
+};
+
+onMounted(async () => {
+    await getCompanyDomain();
+});
+
 const getProspectName = async (prospectUrl) => {
     const prompt = `Given this URL: ${prospectUrl}, return ONLY the company name as a plain text string. No JSON, no explanation, just the name. If the URL is not a valid company website, extract the company name from the domain. Example responses:
     - "www.salesforce.com" -> "Salesforce"
@@ -29,7 +47,7 @@ const getProspectName = async (prospectUrl) => {
 
     try {
         const response = await generateContentSpecificModel({
-            model: 'claude-3.5-sonnet',
+            model: 'llama-3.1-sonar-small-128k-online',
             messages: [
                 {
                     role: 'system',
@@ -52,32 +70,41 @@ const getProspectName = async (prospectUrl) => {
     }
 };
 
-const generateBattlecardContent = async (facts, competitorName, prospectUrl) => {
+const generateBattlecardContent = async (facts, competitorName, prospectUrl, companyDomain) => {
     console.log('Starting battlecard generation for:', competitorName);
     stage.value = 'facts';
     progress.value = 0;
 
-    // Simulate research progress
-    const progressInterval = setInterval(() => {
-        if (progress.value < 45) {
-            progress.value += 1;
-        }
-    }, 100);
+    // Start slow progress simulation to 40%
+    const factProgressInterval = simulateProgress(0, 40);
 
     // Get prospect name first
     console.log('Getting prospect name for:', prospectUrl);
     const prospectName = await getProspectName(prospectUrl);
     console.log('Retrieved prospect name:', prospectName);
 
-    clearInterval(progressInterval);
-    stage.value = 'customizing';
-    progress.value = 50;
+    clearInterval(factProgressInterval);
 
-    // Generate Overview
-    console.log('Generating overview section');
-    const upvotedFacts = await supabase.from('competitor_facts').select('*').eq('competitor_uuid', competitorUuid).eq('fact_upvote', 1);
-    const overviewPrompt = `Create a competitive overview battlecard for ${competitorName}. Use the following facts: ${JSON.stringify(facts)}.
-    ${upvotedFacts.length > 0 ? `\nPrioritize these highly rated facts in your analysis: ${JSON.stringify(upvotedFacts.map((f) => f.fact_content))}` : ''}
+    // Move to customization phase
+    stage.value = 'customizing';
+
+    // Get all facts for this competitor
+    const { data: allFacts, error: factsError } = await supabase.from('competitor_facts').select('*').eq('competitor_uuid', competitorUuid).eq('fact_deleted', 0).order('created_at', { ascending: false });
+
+    if (factsError) throw factsError;
+
+    // Prioritize facts: upvoted first, then by date
+    const prioritizedFacts = allFacts.sort((a, b) => {
+        if (a.fact_upvote !== b.fact_upvote) {
+            return b.fact_upvote - a.fact_upvote;
+        }
+        return new Date(b.fact_date) - new Date(a.fact_date);
+    });
+
+    // Generate Overview with all facts
+    console.log('Generating overview section with all facts');
+    const overviewPrompt = `Create a competitive overview battlecard for ${competitorName} at ${companyDomain}.
+    Use these facts, prioritizing the most recent and highly rated ones: ${JSON.stringify(prioritizedFacts)}.
     Return a JSON object with:
     {
         "title": "Competitor Overview",
@@ -94,30 +121,29 @@ const generateBattlecardContent = async (facts, competitorName, prospectUrl) => 
                 role: 'system',
                 content: 'You are a JSON API. Never include explanations or text outside the JSON object. Return only valid JSON.'
             },
-            {
-                role: 'user',
-                content: overviewPrompt
-            }
+            { role: 'user', content: overviewPrompt }
         ],
-        temperature: 0.1
+        temperature: 0.7
     });
-    console.log('Raw overview response:', overview);
 
     progress.value = 70;
 
-    // Generate Why We Win
-    const strengthsPrompt = `Create a 'Why We Win' battlecard comparing ${userStore.userDetails.company_name} against ${competitorName} for prospect at ${prospectUrl}. You must research current news and updates about the prospect to understand what they care about.
-    Use the following competitor facts: ${JSON.stringify(facts)}.
-    Return a JSON object with EXACTLY 3-6 strength sections, prioritizing the most recent or most relevant ones:
+    // Generate Why We Win with all facts
+    const strengthsPrompt = `Create a 'Why We Win' battlecard comparing ${userStore.userDetails.company_name} against ${competitorName} at ${companyDomain} for prospect at ${prospectUrl}.
+    Use these facts for analysis: ${JSON.stringify(prioritizedFacts)}.
+    Return a JSON object with EXACTLY 3-6 comparison sections:
     {
         "title": "Why We Win",
         "sections": [
             {
-                "summary": "🥊 [13-word summary of your strength vs their weakness]",
-                "context": "[Brief context explaining why this matters to ${prospectUrl}, and how ${userStore.userDetails.company_name} should leverage this to win the deal]",
+                "summary": "🥊 [13-word summary]",
+                "comparisonTable": {
+                    "ourStrength": "[Specific strength of ${userStore.userDetails.company_name}]",
+                    "theirWeakness": "[Specific weakness of ${competitorName}]",
+                    "prospectStrategy": "[How to position this for ${prospectUrl}]"
+                },
                 "factsUsed": [array of fact_uuids used]
             }
-            // ... 2-5 more sections
         ],
         "competitor": "${competitorName}",
         "topic": "Strengths"
@@ -131,19 +157,22 @@ const generateBattlecardContent = async (facts, competitorName, prospectUrl) => 
 
     progress.value = 85;
 
-    // Generate Counter Their Strengths
-    const counterPrompt = `Create a 'Counter Their Strengths' card for ${competitorName}.
-    Use the following facts: ${JSON.stringify(facts)}.
-    Return a JSON object with EXACTLY 3-6 sections about their strengths, prioritizing the most recent or most relevant ones:
+    // Generate Counter Their Strengths with all facts
+    const counterPrompt = `Create a 'Counter Their Strengths' card for ${competitorName} at ${companyDomain}.
+    Use these facts for analysis: ${JSON.stringify(prioritizedFacts)}.
+    Return a JSON object with EXACTLY 3-6 comparison sections:
     {
         "title": "Areas to Address",
         "sections": [
             {
-                "summary": "🪨 [13-word summary of their strength vs our weakness]",
-                "context": "[Brief context explaining the competitive dynamic, why this matters to  ${prospectUrl}, and how ${userStore.userDetails.company_name} should defend against it]",
+                "summary": "🪨 [13-word summary]",
+                "comparisonTable": {
+                    "theirStrength": "[Specific strength of ${competitorName}]",
+                    "ourGap": "[${userStore.userDetails.company_name}'s gap or challenge]",
+                    "defenseStrategy": "[How to defend against this for ${prospectUrl}]"
+                },
                 "factsUsed": [array of fact_uuids used]
             }
-            // ... 2-5 more sections
         ],
         "competitor": "${competitorName}",
         "topic": "Counter"
@@ -196,12 +225,13 @@ const validateAndParseJSON = (response) => {
     }
 };
 
-const generateAndStoreFacts = async (competitorName, companyName, competitorUuid) => {
+const generateAndStoreFacts = async (competitorName, companyName, competitorUuid, prospectUrl, companyDomain) => {
     console.log('Starting fact generation for:', competitorName);
-    const prompt = `You are a competitive intelligence researcher. Return a valid JSON object containing thoroughly researched facts about three entities: ${competitorName} (competitor), ${companyName} (our company), and the prospect company.
+    const prompt = `You are a competitive intelligence researcher. Return a valid JSON object containing thoroughly researched facts about three entities: ${competitorName} at ${companyDomain} (competitor), ${companyName} (our company), and the prospect company at ${prospectUrl}.
 
     Critical Requirements:
-    1. Find at least 15 different, high-quality sources including:
+    You must only use sources that are validated. You may not hallucinate any sources.
+    1. Find a minimum of 10 different, high-quality sources including:
        - Recent news articles (last 3 months)
        - Social media posts (LinkedIn, Twitter) from company executives
        - Press releases and company announcements
@@ -244,7 +274,7 @@ const generateAndStoreFacts = async (competitorName, companyName, competitorUuid
     try {
         console.log('Sending fact generation prompt:', prompt);
         const response = await generateContentSpecificModel({
-            model: 'claude-3.5-sonnet',
+            model: 'llama-3.1-sonar-large-128k-online',
             messages: [
                 {
                     role: 'system',
@@ -255,7 +285,7 @@ const generateAndStoreFacts = async (competitorName, companyName, competitorUuid
                     content: prompt
                 }
             ],
-            temperature: 0.1
+            temperature: 1
         });
 
         const parsedResponse = validateAndParseJSON(response);
@@ -273,7 +303,7 @@ const generateAndStoreFacts = async (competitorName, companyName, competitorUuid
                     fact_content: fact.fact,
                     fact_source: fact.sources[0].url,
                     fact_source_type: fact.sources[0].type,
-                    fact_date: fact.sources[0].date,
+                    fact_date: validateAndFormatDate(fact.sources[0].date),
                     fact_company: fact.company,
                     fact_upvote: 0,
                     fact_regenerated: 0,
@@ -292,7 +322,7 @@ const generateAndStoreFacts = async (competitorName, companyName, competitorUuid
                     fact_type: fact.type,
                     fact_content: fact.fact,
                     fact_source: fact.sources[i].url,
-                    fact_date: fact.sources[i].date,
+                    fact_date: validateAndFormatDate(fact.sources[i].date),
                     fact_upvote: 0,
                     fact_regenerated: 0,
                     fact_deleted: 0,
@@ -402,14 +432,35 @@ const regenerateSection = async (section) => {
     }
 };
 
-const simulateProgress = () => {
+const simulateProgress = (initialValue = 0, targetValue = 95) => {
+    progress.value = initialValue;
     const progressInterval = setInterval(() => {
-        if (progress.value < 95) {
-            // Only go up to 95% to indicate not complete
-            progress.value += 1;
+        if (progress.value < targetValue) {
+            const remaining = targetValue - progress.value;
+            const increment = Math.max(0.2, remaining * 0.03);
+            progress.value = Math.min(targetValue, progress.value + increment);
         }
     }, 100);
     return progressInterval;
+};
+
+const validateAndFormatDate = (dateStr) => {
+    try {
+        // Handle just year format
+        if (dateStr.length === 4) {
+            return `${dateStr}-01-01`;
+        }
+
+        // Parse the date string and format it as YYYY-MM-DD
+        const date = new Date(dateStr);
+        if (isNaN(date.getTime())) {
+            return new Date().toISOString().split('T')[0]; // Fallback to today if invalid
+        }
+        return date.toISOString().split('T')[0];
+    } catch (error) {
+        console.error('Date parsing error:', error);
+        return new Date().toISOString().split('T')[0]; // Fallback to today
+    }
 };
 
 onMounted(async () => {
@@ -440,7 +491,7 @@ onMounted(async () => {
             if (companyError) throw companyError;
 
             try {
-                const newBattlecardData = await generateBattlecardContent(contentStore.competitiveFacts, company.company_name, userStore.prospectUrl);
+                const newBattlecardData = await generateBattlecardContent(contentStore.competitiveFacts, contentStore.competitorDetails.name, userStore.prospectUrl, contentStore.competitorDetails.domain);
                 contentStore.setBattlecardData(newBattlecardData);
                 progress.value = 100;
             } catch (error) {
@@ -501,6 +552,7 @@ onMounted(async () => {
                             <h2>
                                 <strong>{{ section.summary }}</strong>
                             </h2>
+                            <ComparisonTable :data="section.comparisonTable" type="strength" />
                             <ul>
                                 <li><strong>Context:</strong> {{ section.context }}</li>
                             </ul>
@@ -525,6 +577,7 @@ onMounted(async () => {
                             <h2>
                                 <strong>{{ section.summary }}</strong>
                             </h2>
+                            <ComparisonTable :data="section.comparisonTable" type="counter" />
                             <ul>
                                 <li><strong>Context:</strong> {{ section.context }}</li>
                             </ul>

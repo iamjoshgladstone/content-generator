@@ -1,39 +1,38 @@
 import { defineStore } from 'pinia';
-import { ref } from 'vue';
 
-export const useContentStore = defineStore('content', () => {
-    const battlecardData = ref(null);
-    const competitiveFacts = ref([]);
-    const competitorUuid = ref(null);
-
-    const setBattlecardData = (data) => {
-        battlecardData.value = data;
-    };
-
-    const setCompetitiveFacts = (facts) => {
-        competitiveFacts.value = facts;
-    };
-
-    const setCompetitorUuid = (uuid) => {
-        competitorUuid.value = uuid;
-    };
-
-    const clearBattlecardData = () => {
-        battlecardData.value = null;
-    };
-
-    const clearCompetitiveFacts = () => {
-        competitiveFacts.value = [];
-    };
-
-    return {
-        battlecardData,
-        competitiveFacts,
-        competitorUuid,
-        setBattlecardData,
-        setCompetitiveFacts,
-        setCompetitorUuid,
-        clearBattlecardData,
-        clearCompetitiveFacts
-    };
+export const useContentStore = defineStore('content', {
+    state: () => ({
+        competitiveFacts: [],
+        battlecardData: null,
+        competitorDetails: {
+            name: '',
+            domain: ''
+        }
+    }),
+    actions: {
+        setCompetitiveFacts(facts) {
+            this.competitiveFacts = facts;
+        },
+        setBattlecardData(data) {
+            this.battlecardData = data;
+        },
+        setCompetitorDetails(details) {
+            this.competitorDetails = {
+                name: details.name,
+                domain: details.domain
+            };
+        },
+        clearBattlecardData() {
+            this.battlecardData = null;
+        },
+        clearCompetitiveFacts() {
+            this.competitiveFacts = [];
+        },
+        clearCompetitorDetails() {
+            this.competitorDetails = {
+                name: '',
+                domain: ''
+            };
+        }
+    }
 });

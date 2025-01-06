@@ -6,7 +6,7 @@ import Button from 'primevue/button';
 import Dropdown from 'primevue/dropdown';
 import InputText from 'primevue/inputtext';
 import { useToast } from 'primevue/usetoast';
-import { computed, ref } from 'vue';
+import { onMounted, onUnmounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import AppMenuItem from './AppMenuItem.vue';
 
@@ -14,6 +14,98 @@ const userStore = useUserStore();
 const router = useRouter();
 const contentStore = useContentStore();
 const toast = useToast();
+let competitorSubscription = null;
+
+// Dropdown and input data
+const selectedCompetitor = ref(null);
+const prospectUrl = ref('');
+const competitors = ref([]);
+
+// Subscribe to user_competitors changes
+const subscribeToCompetitors = async () => {
+    if (!userStore.userDetails?.user_uuid) {
+        console.log('Waiting for user details...');
+        return;
+    }
+
+    // Initial fetch
+    await fetchCompetitors();
+
+    // Set up real-time subscription
+    competitorSubscription = supabase
+        .channel(`user_competitors_${userStore.userDetails.user_uuid}`)
+        .on(
+            'postgres_changes',
+            {
+                event: '*',
+                schema: 'public',
+                table: 'user_competitors',
+                filter: `user_uuid=eq.${userStore.userDetails.user_uuid}`
+            },
+            async () => {
+                await fetchCompetitors();
+            }
+        )
+        .subscribe();
+};
+
+// Fetch competitors from database
+const fetchCompetitors = async () => {
+    try {
+        if (!userStore.userDetails?.user_uuid) {
+            console.log('User details not yet loaded');
+            competitors.value = [];
+            return;
+        }
+
+        // First get the competitor UUIDs for this user
+        const { data: userCompetitors, error: userError } = await supabase.from('user_competitors').select('competitor_uuid').eq('user_uuid', userStore.userDetails.user_uuid);
+
+        if (userError) throw userError;
+
+        if (!userCompetitors?.length) {
+            competitors.value = [];
+            return;
+        }
+
+        // Then get the company details for these competitors
+        const { data: companies, error: companyError } = await supabase
+            .from('companies')
+            .select('company_name, company_domain')
+            .in(
+                'company_uuid',
+                userCompetitors.map((uc) => uc.competitor_uuid)
+            );
+
+        if (companyError) throw companyError;
+
+        competitors.value = companies.map((company) => ({
+            label: company.company_name,
+            value: company.company_domain
+        }));
+    } catch (error) {
+        console.error('Error fetching competitors:', error);
+        toast.add({
+            severity: 'error',
+            summary: 'Error',
+            detail: 'Failed to load competitors',
+            life: 3000
+        });
+        competitors.value = [];
+    }
+};
+
+// Cleanup subscription on component unmount
+onUnmounted(() => {
+    if (competitorSubscription) {
+        competitorSubscription.unsubscribe();
+    }
+});
+
+// Initialize subscription on mount
+onMounted(() => {
+    subscribeToCompetitors();
+});
 
 const getProspectName = async (url) => {
     try {
@@ -40,16 +132,6 @@ const model = ref([
         label: 'Generate'
     }
 ]);
-
-// Dropdown and input data
-const selectedCompetitor = ref(null);
-const prospectUrl = ref('');
-const competitors = computed(() => {
-    return userStore.competitors.map((competitor) => ({
-        label: competitor.name,
-        value: competitor.website
-    }));
-});
 
 const handleGenerateBattlecard = async () => {
     if (!selectedCompetitor.value || !prospectUrl.value) {
@@ -105,10 +187,16 @@ const handleGenerateBattlecard = async () => {
         userStore.setProspectUrl(prospectUrl.value);
         userStore.setProspectUuid(prospectUuid);
 
-        // Get competitor UUID from companies table
-        const { data: company, error: companyError } = await supabase.from('companies').select('company_uuid').eq('company_domain', selectedCompetitor.value).single();
+        // Get competitor details from companies table
+        const { data: company, error: companyError } = await supabase.from('companies').select('company_uuid, company_name, company_domain').eq('company_domain', selectedCompetitor.value).single();
 
         if (companyError) throw companyError;
+
+        // Store company details in contentStore for use in generation
+        contentStore.setCompetitorDetails({
+            name: company.company_name,
+            domain: company.company_domain
+        });
 
         // Route to generate page
         router.push(`/${userStore.userDetails.user_id}/${company.company_uuid}`);

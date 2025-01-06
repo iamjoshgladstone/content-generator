@@ -88,19 +88,105 @@ const searchCompanies = async (query) => {
 };
 
 // Add competitor to the local list
-const addCompetitor = (company) => {
-    competitors.value.push({
-        name: company.originalName,
-        website: company.domain,
-        logo_url: company.logo
-    });
-    displayModal.value = false;
-    searchQuery.value = '';
+const addCompetitor = async (company) => {
+    try {
+        const user_uuid = userStore.userDetails.user_uuid;
+
+        // Check if company exists in companies table
+        let company_uuid;
+        const { data: existingCompany } = await supabase.from('companies').select('company_uuid').eq('company_domain', company.domain).single();
+
+        if (existingCompany) {
+            company_uuid = existingCompany.company_uuid;
+        } else {
+            // Insert new company
+            const { data: newCompany, error: insertError } = await supabase
+                .from('companies')
+                .insert({
+                    company_name: company.originalName,
+                    company_logo: company.logo,
+                    company_domain: company.domain
+                })
+                .select('company_uuid')
+                .single();
+
+            if (insertError) throw insertError;
+            company_uuid = newCompany.company_uuid;
+        }
+
+        // Add relationship to user_competitors
+        const { error: relationError } = await supabase.from('user_competitors').upsert(
+            {
+                user_uuid: user_uuid,
+                competitor_uuid: company_uuid
+            },
+            {
+                onConflict: 'user_uuid,competitor_uuid'
+            }
+        );
+
+        if (relationError) throw relationError;
+
+        // Update local state
+        competitors.value.push({
+            name: company.originalName,
+            website: company.domain,
+            logo_url: company.logo
+        });
+
+        displayModal.value = false;
+        searchQuery.value = '';
+
+        toast.add({
+            severity: 'success',
+            summary: 'Competitor Added',
+            detail: 'New competitor has been added successfully',
+            life: 3000
+        });
+    } catch (err) {
+        console.error('Error adding competitor:', err);
+        toast.add({
+            severity: 'error',
+            summary: 'Error',
+            detail: 'Failed to add competitor',
+            life: 3000
+        });
+    }
 };
 
 // Add this function to handle deletion
-const removeCompetitor = (competitorToRemove) => {
-    competitors.value = competitors.value.filter((competitor) => competitor.name !== competitorToRemove.name);
+const removeCompetitor = async (competitorToRemove) => {
+    try {
+        const user_uuid = userStore.userDetails.user_uuid;
+
+        // Get the competitor_uuid from companies table
+        const { data: company, error: companyError } = await supabase.from('companies').select('company_uuid').eq('company_domain', competitorToRemove.website).single();
+
+        if (companyError) throw companyError;
+
+        // Delete the relationship from user_competitors
+        const { error: deleteError } = await supabase.from('user_competitors').delete().eq('user_uuid', user_uuid).eq('competitor_uuid', company.company_uuid);
+
+        if (deleteError) throw deleteError;
+
+        // Update local state
+        competitors.value = competitors.value.filter((competitor) => competitor.name !== competitorToRemove.name);
+
+        toast.add({
+            severity: 'success',
+            summary: 'Competitor Removed',
+            detail: 'Competitor has been removed successfully',
+            life: 3000
+        });
+    } catch (err) {
+        console.error('Error removing competitor:', err);
+        toast.add({
+            severity: 'error',
+            summary: 'Error',
+            detail: 'Failed to remove competitor',
+            life: 3000
+        });
+    }
 };
 
 // Add this function after removeCompetitor
